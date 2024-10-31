@@ -33,17 +33,20 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		_, err := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Println("Error reading from connection: ", err.Error())
 			return
 		}
 
-		// Respond with "+PONG\r\n"
-		_, err = conn.Write([]byte("+PONG\r\n"))
-		if err != nil {
-			fmt.Println("Error writing response: ", err.Error())
-			return
+		// Check if the command is PING
+		if line == "PING\r\n" {
+			// Respond with "+PONG\r\n"
+			_, err = conn.Write([]byte("+PONG\r\n"))
+			if err != nil {
+				fmt.Println("Error writing response: ", err.Error())
+				return
+			}
 		}
 	}
 }
