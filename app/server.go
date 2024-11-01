@@ -8,10 +8,17 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
+type storeValue struct {
+	value     string
+	expiry    time.Time
+	hasExpiry bool
+}
+
 var (
-	store = make(map[string]string)
+	store = make(map[string]storeValue)
 	mu    sync.Mutex
 )
 
@@ -27,6 +34,9 @@ func main() {
 		fmt.Printf("Failed to bind to port %d\n", *port)
 		os.Exit(1)
 	}
+
+	go expireKeys()
+
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -61,8 +71,19 @@ func handleRequest(conn net.Conn) {
 				if len(request) > 2 {
 					key := request[1]
 					value := request[2]
+					var expiry time.Time
+					var hasExpiry bool
+					if len(request) > 4 && strings.ToLower(request[3]) == "px" {
+						expiryDuration, err := parseInteger(request[4])
+						if err != nil {
+							conn.Write([]byte("-ERR invalid expire time in set\r\n"))
+							continue
+						}
+						expiry = time.Now().Add(time.Duration(expiryDuration) * time.Millisecond)
+						hasExpiry = true
+					}
 					mu.Lock()
-					store[key] = value
+					store[key] = storeValue{value: value, expiry: expiry, hasExpiry: hasExpiry}
 					mu.Unlock()
 					conn.Write([]byte("+OK\r\n"))
 				} else {
@@ -72,10 +93,14 @@ func handleRequest(conn net.Conn) {
 				if len(request) > 1 {
 					key := request[1]
 					mu.Lock()
-					value, exists := store[key]
+					val, exists := store[key]
+					if exists && val.hasExpiry && time.Now().After(val.expiry) {
+						delete(store, key)
+						exists = false
+					}
 					mu.Unlock()
 					if exists {
-						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)))
+						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(val.value), val.value)))
 					} else {
 						conn.Write([]byte("$-1\r\n"))
 					}
@@ -136,6 +161,21 @@ func parseInteger(s string) (int, error) {
 	_, err := fmt.Sscanf(s, "%d", &n)
 	return n, err
 }
+
+func expireKeys() {
+	for {
+		time.Sleep(100 * time.Millisecond)
+		mu.Lock()
+		now := time.Now()
+		for key, val := range store {
+			if val.hasExpiry && now.After(val.expiry) {
+				delete(store, key)
+			}
+		}
+		mu.Unlock()
+	}
+}
+
 // Add a function to handle replication
 func replicateToFollowers(command string, args []string) {
 	// This function will be implemented in the next stages
