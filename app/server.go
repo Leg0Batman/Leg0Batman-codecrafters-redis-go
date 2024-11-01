@@ -6,6 +6,12 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
+)
+
+var (
+	store = make(map[string]string)
+	mu    sync.Mutex
 )
 
 func main() {
@@ -44,6 +50,31 @@ func handleRequest(conn net.Conn) {
 					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(request[1]), request[1])))
 				} else {
 					conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
+				}
+			case "SET":
+				if len(request) > 2 {
+					key := request[1]
+					value := request[2]
+					mu.Lock()
+					store[key] = value
+					mu.Unlock()
+					conn.Write([]byte("+OK\r\n"))
+				} else {
+					conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+				}
+			case "GET":
+				if len(request) > 1 {
+					key := request[1]
+					mu.Lock()
+					value, exists := store[key]
+					mu.Unlock()
+					if exists {
+						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)))
+					} else {
+						conn.Write([]byte("$-1\r\n"))
+					}
+				} else {
+					conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
 				}
 			default:
 				conn.Write([]byte(fmt.Sprintf("-ERR unknown command '%s'\r\n", command)))
