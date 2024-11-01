@@ -1,29 +1,30 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"sync"
-	"time"
 )
 
 var (
-	store    = make(map[string]string)
-	expiry   = make(map[string]time.Time)
-	mu       sync.Mutex
-	expiryMu sync.Mutex
+	store = make(map[string]string)
+	mu    sync.Mutex
 )
 
 func main() {
-	port := flag.String("port", "6379", "Port to run the Redis server on")
+	// Define the port flag
+	port := flag.Int("port", 6379, "Port to run the Redis server on")
 	flag.Parse()
 
 	fmt.Println("Logs from your program will appear here!")
-	l, err := net.Listen("tcp", "0.0.0.0:"+*port)
+	address := fmt.Sprintf("0.0.0.0:%d", *port)
+	l, err := net.Listen("tcp", address)
 	if err != nil {
-		fmt.Println("Failed to bind to port", *port)
+		fmt.Printf("Failed to bind to port %d\n", *port)
 		os.Exit(1)
 	}
 	for {
@@ -38,23 +39,100 @@ func main() {
 
 func handleRequest(conn net.Conn) {
 	defer conn.Close()
+	reader := bufio.NewReader(conn)
 	for {
-		buf := make([]byte, 1024)
-		_, err := conn.Read(buf)
+		request, err := parseRequest(reader)
 		if err != nil {
 			fmt.Println("Error reading:", err.Error())
 			return
 		}
-		// fmt.Printf("Received data: %v\n", string(buf))
-		command := string(buf)
-		if command == "PING\n" {
-			conn.Write([]byte("PONG\n"))
-		} else if command == "QUIT\n" {
-			conn.Write([]byte("OK\n"))
-			return
-		} else {
-			// fmt.Println("Command not recognized")
-			conn.Write([]byte("-ERR unknown command '" + command + "'\n"))
+		if len(request) > 0 {
+			command := strings.ToUpper(request[0])
+			switch command {
+			case "PING":
+				conn.Write([]byte("+PONG\r\n"))
+			case "ECHO":
+				if len(request) > 1 {
+					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(request[1]), request[1])))
+				} else {
+					conn.Write([]byte("-ERR wrong number of arguments for 'echo' command\r\n"))
+				}
+			case "SET":
+				if len(request) > 2 {
+					key := request[1]
+					value := request[2]
+					mu.Lock()
+					store[key] = value
+					mu.Unlock()
+					conn.Write([]byte("+OK\r\n"))
+				} else {
+					conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+				}
+			case "GET":
+				if len(request) > 1 {
+					key := request[1]
+					mu.Lock()
+					value, exists := store[key]
+					mu.Unlock()
+					if exists {
+						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)))
+					} else {
+						conn.Write([]byte("$-1\r\n"))
+					}
+				} else {
+					conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+				}
+			default:
+				conn.Write([]byte(fmt.Sprintf("-ERR unknown command '%s'\r\n", command)))
+			}
 		}
 	}
+}
+
+func parseRequest(reader *bufio.Reader) ([]string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return nil, err
+	}
+	line = strings.TrimSpace(line)
+	if len(line) == 0 || line[0] != '*' {
+		return nil, fmt.Errorf("invalid request")
+	}
+	numArgs, err := parseInteger(line[1:])
+	if err != nil {
+		return nil, err
+	}
+	request := make([]string, numArgs)
+	for i := 0; i < numArgs; i++ {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		line = strings.TrimSpace(line)
+		if len(line) == 0 || line[0] != '$' {
+			return nil, fmt.Errorf("invalid request")
+		}
+		argLen, err := parseInteger(line[1:])
+		if err != nil {
+			return nil, err
+		}
+		arg := make([]byte, argLen)
+		_, err = reader.Read(arg)
+		if err != nil {
+			return nil, err
+		}
+		request[i] = string(arg)
+		// Read the trailing \r\n
+		_, err = reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+	}
+	return request, nil
+}
+
+func parseInteger(s string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(s, "%d", &n)
+	return n, err
 }
