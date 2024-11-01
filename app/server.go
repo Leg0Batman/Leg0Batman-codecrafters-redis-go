@@ -7,11 +7,14 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
-	store = make(map[string]string)
-	mu    sync.Mutex
+	store      = make(map[string]string)
+	expiry     = make(map[string]time.Time)
+	mu         sync.Mutex
+	expiryMu   sync.Mutex
 )
 
 func main() {
@@ -55,9 +58,32 @@ func handleRequest(conn net.Conn) {
 				if len(request) > 2 {
 					key := request[1]
 					value := request[2]
+					var px int
+					if len(request) > 4 && strings.ToUpper(request[3]) == "PX" {
+						var err error
+						px, err = parseInteger(request[4])
+						if err != nil {
+							conn.Write([]byte("-ERR invalid PX value\r\n"))
+							continue
+						}
+					}
 					mu.Lock()
 					store[key] = value
 					mu.Unlock()
+					if px > 0 {
+						expiryMu.Lock()
+						expiry[key] = time.Now().Add(time.Duration(px) * time.Millisecond)
+						expiryMu.Unlock()
+						go func(key string, duration time.Duration) {
+							time.Sleep(duration)
+							mu.Lock()
+							expiryMu.Lock()
+							delete(store, key)
+							delete(expiry, key)
+							expiryMu.Unlock()
+							mu.Unlock()
+						}(key, time.Duration(px)*time.Millisecond)
+					}
 					conn.Write([]byte("+OK\r\n"))
 				} else {
 					conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
@@ -69,7 +95,20 @@ func handleRequest(conn net.Conn) {
 					value, exists := store[key]
 					mu.Unlock()
 					if exists {
-						conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)))
+						expiryMu.Lock()
+						expiryTime, hasExpiry := expiry[key]
+						expiryMu.Unlock()
+						if hasExpiry && time.Now().After(expiryTime) {
+							mu.Lock()
+							expiryMu.Lock()
+							delete(store, key)
+							delete(expiry, key)
+							expiryMu.Unlock()
+							mu.Unlock()
+							conn.Write([]byte("$-1\r\n"))
+						} else {
+							conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)))
+						}
 					} else {
 						conn.Write([]byte("$-1\r\n"))
 					}
