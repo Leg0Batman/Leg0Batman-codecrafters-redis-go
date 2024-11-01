@@ -136,3 +136,8 @@ func parseInteger(s string) (int, error) {
 	_, err := fmt.Sscanf(s, "%d", &n)
 	return n, err
 }
+// Add a function to handle replication
+func replicateToFollowers(command string, args []string) {
+	// This function will be implemented in the next stages
+	// For now, it's just a placeholder
+}
