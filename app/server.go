@@ -2,17 +2,19 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-const (
-	roleMaster = "master"
+var (
+	store      = make(map[string]storeValue)
+	mu         sync.Mutex
+	serverRole = "master"
 )
 
 type storeValue struct {
@@ -21,31 +23,28 @@ type storeValue struct {
 	hasExpiry bool
 }
 
-var (
-	store = make(map[string]storeValue)
-	mu    sync.Mutex
-)
-
 func main() {
-	// Define the port flag
-	port := flag.Int("port", 6379, "Port to run the Redis server on")
-	flag.Parse()
-
-	fmt.Println("Logs from your program will appear here!")
-	address := fmt.Sprintf("0.0.0.0:%d", *port)
-	l, err := net.Listen("tcp", address)
-	if err != nil {
-		fmt.Printf("Failed to bind to port %d\n", *port)
-		os.Exit(1)
+	port := "6379"
+	for i, arg := range os.Args {
+		if arg == "--port" && i+1 < len(os.Args) {
+			port = os.Args[i+1]
+		} else if arg == "--replicaof" && i+1 < len(os.Args) {
+			serverRole = "slave"
+		}
 	}
 
-	go expireKeys()
+	ln, err := net.Listen("tcp", ":"+port)
+	if err != nil {
+		fmt.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+	defer ln.Close()
 
 	for {
-		conn, err := l.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Println("Error accepting connection: ", err.Error())
-			continue
+			fmt.Println("Error accepting:", err.Error())
+			os.Exit(1)
 		}
 		go handleRequest(conn)
 	}
@@ -113,7 +112,7 @@ func handleRequest(conn net.Conn) {
 				}
 			case "INFO":
 				if len(request) > 1 && strings.ToLower(request[1]) == "replication" {
-					info := "role:master\r\n"
+					info := fmt.Sprintf("role:%s\r\n", serverRole)
 					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(info), info)))
 				} else {
 					conn.Write([]byte("-ERR unknown INFO subcommand\r\n"))
@@ -140,11 +139,10 @@ func parseRequest(reader *bufio.Reader) ([]string, error) {
 	}
 	request := make([]string, numArgs)
 	for i := 0; i < numArgs; i++ {
-		line, err := reader.ReadString('\n')
+		line, err = reader.ReadString('\n')
 		if err != nil {
 			return nil, err
 		}
-		line = strings.TrimSpace(line)
 		if len(line) == 0 || line[0] != '$' {
 			return nil, fmt.Errorf("invalid request")
 		}
@@ -158,37 +156,11 @@ func parseRequest(reader *bufio.Reader) ([]string, error) {
 			return nil, err
 		}
 		request[i] = string(arg)
-		// Read the trailing \r\n
-		_, err = reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
+		reader.ReadString('\n') // read the trailing \r\n
 	}
 	return request, nil
 }
 
 func parseInteger(s string) (int, error) {
-	var n int
-	_, err := fmt.Sscanf(s, "%d", &n)
-	return n, err
-}
-
-func expireKeys() {
-	for {
-		time.Sleep(100 * time.Millisecond)
-		mu.Lock()
-		now := time.Now()
-		for key, val := range store {
-			if val.hasExpiry && now.After(val.expiry) {
-				delete(store, key)
-			}
-		}
-		mu.Unlock()
-	}
-}
-
-// Add a function to handle replication
-func replicateToFollowers(command string, args []string) {
-	// This function will be implemented in the next stages
-	// For now, it's just a placeholder
+	return strconv.Atoi(s)
 }
