@@ -114,7 +114,7 @@ func handleRequest(conn net.Conn) {
 			case "INFO":
 				if len(request) > 1 && strings.ToLower(request[1]) == "replication" {
 					info := "role:master\r\n"
-					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s", len(info), info)))
+					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(info), info)))
 				} else {
 					conn.Write([]byte("-ERR unknown INFO subcommand\r\n"))
 				}
