@@ -133,7 +133,7 @@ func parseRequest(reader *bufio.Reader) ([]string, error) {
 	if len(line) == 0 || line[0] != '*' {
 		return nil, fmt.Errorf("invalid request")
 	}
-	numArgs, err := parseInteger(line[1:])
+	numArgs, err := strconv.Atoi(line[1:])
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func parseRequest(reader *bufio.Reader) ([]string, error) {
 		if len(line) == 0 || line[0] != '$' {
 			return nil, fmt.Errorf("invalid request")
 		}
-		argLen, err := parseInteger(line[1:])
+		argLen, err := strconv.Atoi(strings.TrimSpace(line[1:]))
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +156,10 @@ func parseRequest(reader *bufio.Reader) ([]string, error) {
 			return nil, err
 		}
 		request[i] = string(arg)
-		reader.ReadString('\n') // read the trailing \r\n
+		_, err = reader.ReadString('\n') // read the trailing \r\n
+		if err != nil {
+			return nil, err
+		}
 	}
 	return request, nil
 }
