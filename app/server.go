@@ -11,6 +11,19 @@ import (
 	"time"
 )
 
+const (
+	roleMaster = "master"
+)
+
+func handleInfoCommand(args []string, conn net.Conn) {
+	if len(args) > 1 && strings.ToLower(args[1]) == "replication" {
+		response := "role:master\r\n"
+		conn.Write([]byte(fmt.Sprintf("$%d\r\n%s", len(response), response)))
+	} else {
+		conn.Write([]byte("-ERR unknown section\r\n"))
+	}
+}
+
 type storeValue struct {
 	value     string
 	expiry    time.Time
