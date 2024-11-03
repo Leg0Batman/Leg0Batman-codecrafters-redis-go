@@ -112,7 +112,12 @@ func handleRequest(conn net.Conn) {
 					conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
 				}
 			case "INFO":
-				conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(roleMaster), roleMaster)))
+				if len(request) > 1 && strings.ToLower(request[1]) == "replication" {
+					info := "role:master\r\n"
+					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s", len(info), info)))
+				} else {
+					conn.Write([]byte("-ERR unknown INFO subcommand\r\n"))
+				}
 			default:
 				conn.Write([]byte(fmt.Sprintf("-ERR unknown command '%s'\r\n", command)))
 			}
