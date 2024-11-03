@@ -12,9 +12,11 @@ import (
 )
 
 var (
-	store      = make(map[string]storeValue)
-	mu         sync.Mutex
-	serverRole = "master"
+	store            = make(map[string]storeValue)
+	mu               sync.Mutex
+	serverRole       = "master"
+	masterReplID     = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb"
+	masterReplOffset = 0
 )
 
 type storeValue struct {
@@ -112,7 +114,7 @@ func handleRequest(conn net.Conn) {
 				}
 			case "INFO":
 				if len(request) > 1 && strings.ToLower(request[1]) == "replication" {
-					info := fmt.Sprintf("role:%s\r\n", serverRole)
+					info := fmt.Sprintf("role:%s\r\nmaster_replid:%s\r\nmaster_repl_offset:%d\r\n", serverRole, masterReplID, masterReplOffset)
 					conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(info), info)))
 				} else {
 					conn.Write([]byte("-ERR unknown INFO subcommand\r\n"))
