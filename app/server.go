@@ -15,15 +15,6 @@ const (
 	roleMaster = "master"
 )
 
-func handleInfoCommand(args []string, conn net.Conn) {
-	if len(args) > 1 && strings.ToLower(args[1]) == "replication" {
-		response := "role:master\r\n"
-		conn.Write([]byte(fmt.Sprintf("$%d\r\n%s", len(response), response)))
-	} else {
-		conn.Write([]byte("-ERR unknown section\r\n"))
-	}
-}
-
 type storeValue struct {
 	value     string
 	expiry    time.Time
@@ -193,4 +184,26 @@ func expireKeys() {
 func replicateToFollowers(command string, args []string) {
 	// This function will be implemented in the next stages
 	// For now, it's just a placeholder
+}
+func handleInfoCommand(args []string, conn net.Conn) {
+	if len(args) > 1 && strings.ToLower(args[1]) == "replication" {
+		response := "role:master\r\n"
+		conn.Write([]byte(fmt.Sprintf("$%d\r\n%s", len(response), response)))
+	} else {
+		conn.Write([]byte("-ERR unknown section\r\n"))
+	}
+}
+
+func handleReplicationCommand(args []string, conn net.Conn) {
+	if len(args) > 1 && strings.ToLower(args[1]) == "of" {
+		if len(args) > 2 {
+			address := args[2]
+			fmt.Println("Replicating to", address)
+			conn.Write([]byte("+OK\r\n"))
+		} else {
+			conn.Write([]byte("-ERR wrong number of arguments for 'replication of' command\r\n"))
+		}
+	} else {
+		conn.Write([]byte("-ERR unknown subcommand\r\n"))
+	}
 }
