@@ -34,7 +34,7 @@ func main() {
 	fmt.Println("Logs from your program will appear here!")
 	address := fmt.Sprintf("0.0.0.0:%d", *port)
 	l, err := net.Listen("tcp", address)
-	if (err != nil) {
+	if err != nil {
 		fmt.Printf("Failed to bind to port %d\n", *port)
 		os.Exit(1)
 	}
@@ -112,7 +112,7 @@ func handleRequest(conn net.Conn) {
 					conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
 				}
 			case "INFO":
-				handleInfoCommand(request, conn)
+				conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(roleMaster), roleMaster)))
 			default:
 				conn.Write([]byte(fmt.Sprintf("-ERR unknown command '%s'\r\n", command)))
 			}
@@ -186,13 +186,4 @@ func expireKeys() {
 func replicateToFollowers(command string, args []string) {
 	// This function will be implemented in the next stages
 	// For now, it's just a placeholder
-}
-
-func handleInfoCommand(args []string, conn net.Conn) {
-	if len(args) > 1 && strings.ToLower(args[1]) == "replication" {
-		response := "role:master\r\n"
-		conn.Write([]byte(fmt.Sprintf("$%d\r\n%s", len(response), response)))
-	} else {
-		conn.Write([]byte("-ERR unknown section\r\n"))
-	}
 }
